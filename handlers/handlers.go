@@ -7,12 +7,28 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Zulbukharov/hasura-golang-service/services"
+	"github.com/Zulbukharov/hasura-golang-service/tools"
+
+	"github.com/Zulbukharov/hasura-golang-service/db"
 	"github.com/gin-gonic/gin"
 )
 
+// GithubAuthStruct ...
 type GithubAuthStruct struct {
-	accessToken string `json: "access_token"`
-	tokenType   string `json: "type"`
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"type"`
+	JwtToken    string `json:"jwt_token"`
+}
+
+type GithubUser struct {
+	UserLogin string `json:"login"`
+}
+
+// UserValuesStruct ...
+type UserValuesStruct struct {
+	AccessToken string `json:"access_token"`
+	JwtToken    string `json:"jwt_token"`
 }
 
 var clientID = os.Getenv("CLIENT_ID")
@@ -34,11 +50,35 @@ func Cors() gin.HandlerFunc {
 	}
 }
 
+func getGithubUser(token string) ([]byte, int) {
+	// https://api.github.com
+	url := "https://api.github.com/user"
+	tokenHeader := fmt.Sprintf("token %s", token)
+	req, err := http.NewRequest("GET", url, nil)
+	req.Header.Set("Authorization", tokenHeader)
+
+	client := http.Client{}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		panic(err)
+	}
+
+	defer resp.Body.Close()
+
+	if resp.Status != "200 OK" {
+		return []byte{'0'}, 404
+	}
+	fmt.Println("response Headers:", resp.Header)
+	body, _ := ioutil.ReadAll(resp.Body)
+	fmt.Println("response Body:", string(body))
+	return body, 200
+}
+
 // GithubAuth ...
-func GithubAuth(c *gin.Context) {
+func getGithubToken(code string) ([]byte, int) {
 	url := "https://github.com/login/oauth/access_token"
 	fmt.Println("URL:>", url)
-	code := c.Query("code")
 	var u = fmt.Sprintf(`%s?client_id=%s&client_secret=%s&code=%s&state=sup`, url,
 		clientID, clientSecret, code)
 	req, err := http.NewRequest("POST", u, nil)
@@ -54,13 +94,53 @@ func GithubAuth(c *gin.Context) {
 	fmt.Println("response Status:", resp.Status)
 	if resp.Status != "200 OK" {
 		fmt.Println("hi")
-		c.JSON(404, gin.H{"status": "Error"})
+		return []byte{'0'}, 404
 	}
 	fmt.Println("response Headers:", resp.Header)
 	body, _ := ioutil.ReadAll(resp.Body)
-	var t GithubAuthStruct
-	json.Unmarshal(body, &t)
-	fmt.Println("[unmarshall]", t)
 	fmt.Println("response Body:", string(body))
-	c.JSON(200, string(body))
+	return (body), 200
+}
+
+func Auth(c *gin.Context) {
+	code := c.Query("code")
+	res, status := getGithubToken(code)
+	if status != 200 {
+		c.JSON(404, nil)
+		return
+	}
+	var t GithubAuthStruct
+	json.Unmarshal(res, &t)
+	fmt.Println("[unmarshall]", t)
+	var user GithubUser
+	// get github user
+	u, s := getGithubUser(t.AccessToken)
+	if s != 200 {
+		c.JSON(404, nil)
+		return
+	}
+	err := json.Unmarshal(u, &user)
+	fmt.Println("[unmarshall err]", err)
+	fmt.Println("[user]", user)
+	client := db.GetClient()
+	// get user from hasura
+	_, err = services.GetUser(client, user.UserLogin)
+	if err != nil {
+		fmt.Println(err)
+		// if not exist add user
+		er := services.InsertUser(client, user.UserLogin)
+		if er != nil {
+			c.JSON(404, nil)
+			return
+		}
+	}
+	//send acess token to jwt generator
+	token, err := tools.GenerateToken(user.UserLogin)
+	t.JwtToken = token
+	js, err := json.Marshal(t)
+	if err != nil {
+		c.JSON(404, nil)
+		return
+	}
+	c.JSON(200, string(js))
 }

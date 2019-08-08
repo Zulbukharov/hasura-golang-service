@@ -2,12 +2,13 @@ package tools
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/dgrijalva/jwt-go"
 )
 
-var jwtSecret = []byte("opa")
+var jwtSecret = []byte(os.Getenv("JWT_SECRET"))
 
 type Claims struct {
 	HasuraClaims map[string]interface{} `json:"https://hasura.io/jwt/claims"`
@@ -24,7 +25,7 @@ func GenerateToken(id string) (string, error) {
 		map[string]interface{}{
 			"x-hasura-default-role":  "user",
 			"x-hasura-allowed-roles": a,
-			"x-hasura-user-id":       "1",
+			"x-hasura-user-id":       id,
 		},
 		jwt.StandardClaims{
 			ExpiresAt: expireTime.Unix(),
