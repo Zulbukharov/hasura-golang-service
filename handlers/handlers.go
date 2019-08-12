@@ -7,10 +7,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/Zulbukharov/hasura-golang-service/db"
 	"github.com/Zulbukharov/hasura-golang-service/services"
 	"github.com/Zulbukharov/hasura-golang-service/tools"
-
-	"github.com/Zulbukharov/hasura-golang-service/db"
 	"github.com/gin-gonic/gin"
 )
 
@@ -18,7 +17,6 @@ import (
 type GithubAuthStruct struct {
 	AccessToken string `json:"access_token"`
 	TokenType   string `json:"type"`
-	JwtToken    string `json:"jwt_token"`
 }
 
 type GithubUser struct {
@@ -27,8 +25,7 @@ type GithubUser struct {
 
 // UserValuesStruct ...
 type UserValuesStruct struct {
-	AccessToken string `json:"access_token"`
-	JwtToken    string `json:"jwt_token"`
+	JwtToken string `json:"jwt_token"`
 }
 
 var clientID = os.Getenv("CLIENT_ID")
@@ -102,19 +99,11 @@ func getGithubToken(code string) ([]byte, int) {
 	return (body), 200
 }
 
-func Auth(c *gin.Context) {
+func GenerateToken(c *gin.Context) {
 	code := c.Query("code")
-	res, status := getGithubToken(code)
-	if status != 200 {
-		c.JSON(404, nil)
-		return
-	}
-	var t GithubAuthStruct
-	json.Unmarshal(res, &t)
-	fmt.Println("[unmarshall]", t)
-	var user GithubUser
 	// get github user
-	u, s := getGithubUser(t.AccessToken)
+	var user GithubUser
+	u, s := getGithubUser(code)
 	if s != 200 {
 		c.JSON(404, nil)
 		return
@@ -136,11 +125,26 @@ func Auth(c *gin.Context) {
 	}
 	//send acess token to jwt generator
 	token, err := tools.GenerateToken(user.UserLogin)
-	t.JwtToken = token
-	js, err := json.Marshal(t)
+	var jwtToken UserValuesStruct
+	jwtToken.JwtToken = token
+	js, err := json.Marshal(jwtToken)
 	if err != nil {
 		c.JSON(404, nil)
 		return
 	}
 	c.JSON(200, string(js))
+}
+
+func Auth(c *gin.Context) {
+	code := c.Query("code")
+	res, status := getGithubToken(code)
+	if status != 200 {
+		c.JSON(404, nil)
+		return
+	}
+	var t GithubAuthStruct
+	json.Unmarshal(res, &t)
+	fmt.Println("[unmarshall]", t)
+	// var user GithubUser
+	c.JSON(200, t.AccessToken)
 }
