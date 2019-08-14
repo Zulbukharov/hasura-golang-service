@@ -7,5 +7,4 @@ import (
 
 func SetupRoutes(r *gin.Engine) {
 	r.GET("/auth", handlers.Cors(), handlers.Auth)
-	r.GET("/generateToken", handlers.GenerateToken)
 }

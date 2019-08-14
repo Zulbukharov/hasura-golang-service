@@ -16,16 +16,11 @@ import (
 // GithubAuthStruct ...
 type GithubAuthStruct struct {
 	AccessToken string `json:"access_token"`
-	TokenType   string `json:"type"`
+	JwtToken    string `json:"jwt_token"`
 }
 
 type GithubUser struct {
 	UserLogin string `json:"login"`
-}
-
-// UserValuesStruct ...
-type UserValuesStruct struct {
-	JwtToken string `json:"jwt_token"`
 }
 
 var clientID = os.Getenv("CLIENT_ID")
@@ -99,11 +94,19 @@ func getGithubToken(code string) ([]byte, int) {
 	return (body), 200
 }
 
-func GenerateToken(c *gin.Context) {
+func Auth(c *gin.Context) {
 	code := c.Query("code")
-	// get github user
+	res, status := getGithubToken(code)
+	if status != 200 {
+		c.JSON(404, nil)
+		return
+	}
+	var t GithubAuthStruct
+	json.Unmarshal(res, &t)
+	fmt.Println("[unmarshall]", t)
+	// var user GithubUser
 	var user GithubUser
-	u, s := getGithubUser(code)
+	u, s := getGithubUser(t.AccessToken)
 	if s != 200 {
 		c.JSON(404, nil)
 		return
@@ -125,26 +128,11 @@ func GenerateToken(c *gin.Context) {
 	}
 	//send acess token to jwt generator
 	token, err := tools.GenerateToken(user.UserLogin)
-	var jwtToken UserValuesStruct
-	jwtToken.JwtToken = token
-	js, err := json.Marshal(jwtToken)
+	t.JwtToken = token
+	js, err := json.Marshal(t)
 	if err != nil {
 		c.JSON(404, nil)
 		return
 	}
 	c.JSON(200, string(js))
-}
-
-func Auth(c *gin.Context) {
-	code := c.Query("code")
-	res, status := getGithubToken(code)
-	if status != 200 {
-		c.JSON(404, nil)
-		return
-	}
-	var t GithubAuthStruct
-	json.Unmarshal(res, &t)
-	fmt.Println("[unmarshall]", t)
-	// var user GithubUser
-	c.JSON(200, t.AccessToken)
 }
